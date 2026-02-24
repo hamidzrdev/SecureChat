@@ -20,8 +20,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
       - schatb
 
@@ -93,22 +91,6 @@ services:
     networks:
       - schatb
 
-  redis:
-    image: redis:7-alpine
-    container_name: schatb-redis
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - schatb
-
   mysql:
     image: mysql:8.4
     container_name: schatb-mysql
@@ -130,31 +112,8 @@ services:
     networks:
       - schatb
 
-  pgsql:
-    image: postgres:17-alpine
-    container_name: schatb-pgsql
-    restart: unless-stopped
-    profiles: ["pgsql"]
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-schatb}
-      POSTGRES_USER: ${POSTGRES_USER:-schatb}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
-    ports:
-      - "${PGSQL_PORT:-5432}:5432"
-    volumes:
-      - pgsql-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-schatb} -d ${POSTGRES_DB:-schatb}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - schatb
-
 volumes:
-  redis-data:
   mysql-data:
-  pgsql-data:
 
 networks:
   schatb:

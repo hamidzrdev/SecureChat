@@ -38,17 +38,6 @@ if [ "${WAIT_FOR_DB:-true}" = "true" ]; then
                 sleep 2
             done
             ;;
-        pgsql)
-            ATTEMPTS=30
-            until php -r 'try { new PDO("pgsql:host=".getenv("DB_HOST").";port=".getenv("DB_PORT").";dbname=".getenv("DB_DATABASE"), getenv("DB_USERNAME"), getenv("DB_PASSWORD")); exit(0);} catch (Throwable $e) { exit(1);}'; do
-                ATTEMPTS=$((ATTEMPTS - 1))
-                if [ "${ATTEMPTS}" -le 0 ]; then
-                    echo "Database connection timeout (pgsql)."
-                    exit 1
-                fi
-                sleep 2
-            done
-            ;;
     esac
 fi
 

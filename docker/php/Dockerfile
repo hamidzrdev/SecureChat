@@ -12,7 +12,6 @@ RUN apt-get update \
         libfreetype6-dev \
         libjpeg62-turbo-dev \
         libpng-dev \
-        libpq-dev \
         libsqlite3-dev \
         libzip-dev \
         unzip \
@@ -22,12 +21,9 @@ RUN apt-get update \
         gd \
         pcntl \
         pdo_mysql \
-        pdo_pgsql \
         pdo_sqlite \
         sockets \
         zip \
-    && pecl install redis \
-    && docker-php-ext-enable redis \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

@@ -1,174 +1,134 @@
-# Secure Chat (Laravel 12 + Livewire 4)
 
-Secure Chat is a Laravel 12 + Livewire 4 application with:
-- public and private chat
-- Reverb (realtime WebSocket)
-- queue workers
-- scheduler jobs
-- image upload support
+<p align="center">
+  <img src="docs/logo.png" width="180" alt="Secure Chat Logo"/>
+</p>
 
-## Requirements
+<h1 align="center">Secure Chat</h1>
 
-### Docker (recommended)
-- Docker Desktop (or Docker Engine + Docker Compose plugin)
+<p align="center">
+  🇮🇷 <a href="README.fa.md">مشاهده نسخه فارسی</a>
+</p>
 
-### Local (without Docker)
+---
+
+Secure Chat is a real-time chat application built with Laravel and WebSocket (Laravel Reverb).  
+It supports public and private messaging, encrypted passphrase-based chats, queue processing, scheduled jobs, and automatic message expiration.
+
+---
+
+## 🎬 Preview
+
+<p align="center">
+  <img src="docs/movie.gif" width="700"/>
+</p>
+
+---
+
+## 📸 Screenshots
+
+<p align="center">
+  <img src="docs/1.png" width="250"/>
+  <img src="docs/2.png" width="250"/>
+  <img src="docs/3.png" width="250"/>
+</p>
+
+---
+
+## 💬 Features
+
+- Public Chat Room
+- Private One-to-One Chat
+- Passphrase-Based Encrypted Private Chat
+- Real-Time Messaging via WebSocket (Laravel Reverb)
+- Online Users Presence Indicator
+- Server-Side Image Upload & Validation
+- Automatic Message Deletion (TTL-Based)
+- Queue Workers Processing
+- Scheduled Jobs (Task Scheduler)
+- Feature Toggle via Config File
+
+---
+
+## ⚙️ Requirements
+
 - PHP 8.3+
-- Composer 2+
-- Node.js 20+ and npm
-- MySQL 8+
-- Redis 7+
+- MySQL
+- Laravel Reverb
+- Composer
+- Node.js & NPM
 
-## Docker Setup (recommended)
+---
 
-This is the primary and stable setup for this project.
-
-1. Clone and enter project directory:
-
-```bash
-git clone <repo-url>
-cd schatb
-```
-
-2. Create `.env` if it does not exist:
-
-```bash
-cp .env.example .env
-```
-
-3. Make sure DB values in `.env` are compatible with Docker services:
-
-```env
-DB_CONNECTION=mysql
-DB_HOST=mysql
-DB_PORT=3306
-DB_DATABASE=schat
-DB_USERNAME=schatb
-DB_PASSWORD=secret
-```
-
-4. Start services:
-
-```bash
-docker compose up -d --build
-```
-
-5. Endpoints:
-- App: `http://localhost:8000`
-- Reverb: `http://localhost:8080`
-- MySQL: `localhost:3306`
-- Redis: `localhost:6379`
-
-### Services started by Docker Compose
-- `app` (Laravel HTTP server)
-- `queue` (`php artisan queue:work`)
-- `reverb` (`php artisan reverb:start`)
-- `scheduler` (`schedule:run` every 60 seconds)
-- `mysql`
-- `redis`
-
-### Useful Docker commands
-
-```bash
-docker compose ps
-docker compose logs -f app
-docker compose logs -f queue
-docker compose logs -f scheduler
-docker compose logs -f reverb
-docker compose logs -f mysql
-docker compose down
-```
-
-## Local Setup (without Docker)
-
-1. Install dependencies:
+## 🛠 Manual Installation (Linux)
 
 ```bash
 composer install
-npm install
-```
 
-2. Create and configure `.env`:
-
-```bash
 cp .env.example .env
 php artisan key:generate
-```
 
-3. Configure local database and redis:
-
-```env
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=schat
-DB_USERNAME=<your_mysql_user>
-DB_PASSWORD=<your_mysql_password>
-
-REDIS_HOST=127.0.0.1
-REVERB_HOST=127.0.0.1
-REVERB_PORT=8080
-```
-
-4. Run migrations:
-
-```bash
 php artisan migrate
-```
+php artisan chat:setup
 
-5. Start app services:
-
-```bash
-composer dev
-php artisan schedule:work
-```
-
-`composer dev` runs `serve + queue + reverb + vite`.  
-Run `schedule:work` in a separate terminal.
-
-## Testing and Code Style
-
-```bash
-php artisan test --compact
-vendor/bin/pint --dirty
-```
-
-## Troubleshooting
-
-### HTTP 500 on login or chat
-- Check `.env` and make sure there is no leading space before `DB_*` keys.
-- For Docker, verify:
-  - `DB_HOST=mysql`
-  - `DB_USERNAME=schatb`
-  - `DB_PASSWORD=secret`
-
-Then run:
-
-```bash
-docker compose up -d --force-recreate app queue reverb scheduler
-docker compose exec app php artisan optimize:clear
-```
-
-### Vite manifest error
-If you see `Unable to locate file in Vite manifest`:
-
-```bash
+npm install
 npm run build
-```
 
-For development mode:
-
-```bash
-npm run dev
-```
-
-### Clear Laravel caches
-
-```bash
 php artisan optimize:clear
 ```
 
-## Notes
+---
 
-No special seed is required for first login.  
-Open the Login page and create a new `Chat ID`.
+## 🚀 Running the Application
+
+### Start Application (Port 8000)
+
+```bash
+php artisan serve --host=0.0.0.0 --port=8000
+```
+
+Access via:
+
+http://localhost:8000
+
+---
+
+### Run Queue Worker
+
+```bash
+php artisan queue:work
+```
+
+---
+
+### Run Scheduler
+
+```bash
+php artisan schedule:work
+```
+
+---
+
+### Run WebSocket Server (Reverb – Port 8080)
+
+```bash
+php artisan reverb:start --host=0.0.0.0 --port=8080
+```
+
+Add to `.env`:
+
+REVERB_PORT=8080
+
+---
+
+## 🐳 Docker Deployment
+
+```bash
+docker build -t secure-chat .
+docker run -d -p 8000:8000 -p 8080:8080 secure-chat
+```
+
+Or:
+
+```bash
+docker-compose up -d
+```

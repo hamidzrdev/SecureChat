@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@theme {
+    --font-sans: 'Plus Jakarta Sans', 'Vazirmatn', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --color-brand-50: #fff9ea;
+    --color-brand-100: #fff0cc;
+    --color-brand-200: #ffe19a;
+    --color-brand-300: #ffd061;
+    --color-brand-400: #ecb72d;
+    --color-brand-500: #d4a017;
+    --color-brand-600: #b8860b;
+    --color-brand-700: #8f6a05;
+    --color-brand-800: #6b4e06;
+    --color-brand-900: #473205;
+    --shadow-soft: 0 2px 14px rgba(0, 0, 0, 0.28), 0 20px 46px -28px rgba(0, 0, 0, 0.82);
+    --shadow-floating: 0 28px 56px -30px rgba(0, 0, 0, 0.9);
+    --radius-xl: 0.875rem;
+    --radius-2xl: 1rem;
+    --radius-3xl: 1.5rem;
+}
+
+@layer base {
+    html,
+    body {
+        min-height: 100%;
+    }
+
+    body {
+        background:
+            radial-gradient(72rem 38rem at 10% -12%, rgba(255, 209, 97, 0.2), transparent 62%),
+            radial-gradient(68rem 36rem at 94% -16%, rgba(212, 160, 23, 0.16), transparent 64%),
+            linear-gradient(180deg, #fffdf8 0%, #fff8ea 50%, #fff4df 100%);
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        color: #23180a;
+    }
+
+    .dark body {
+        background:
+            radial-gradient(84rem 44rem at 10% -14%, rgba(236, 183, 45, 0.2), transparent 64%),
+            radial-gradient(74rem 38rem at 92% -18%, rgba(184, 134, 11, 0.18), transparent 66%),
+            linear-gradient(180deg, #080705 0%, #050505 55%, #040404 100%);
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        color: #f5e7c5;
+    }
+
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(236, 183, 45, 0.55) transparent;
+    }
+
+    *::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(212, 160, 23, 0.52);
+        border: 2px solid transparent;
+        background-clip: padding-box;
+    }
+
+    .dark *::-webkit-scrollbar-thumb {
+        background: rgba(236, 183, 45, 0.44);
+        background-clip: padding-box;
+    }
+
+    ::selection {
+        background: rgba(236, 183, 45, 0.35);
+        color: #1b1509;
+    }
+}

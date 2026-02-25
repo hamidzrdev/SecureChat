@@ -54,6 +54,8 @@ class SidebarOnlineUsersLivewire extends Component
         return [
             'sidebar-private-chat-opened' => 'handlePrivateChatOpened',
             'chat-shell-conversation-selected' => 'setSelectedConversation',
+            'chat-shell-conversation-selected.main' => 'setSelectedConversation',
+            'chat-shell-conversation-selected.modal' => 'setSelectedConversation',
         ];
     }
 
@@ -119,7 +121,7 @@ class SidebarOnlineUsersLivewire extends Component
             ->values()
             ->all();
 
-        if ($checkForIncomingActivity && $this->conversationSnapshotReady) {
+        if ($checkForIncomingActivity && $this->conversationSnapshotReady && $this->autoOpenIncomingPrivateChat) {
             $incomingConversationId = $this->detectIncomingConversationId($conversationItems);
 
             if ($incomingConversationId) {

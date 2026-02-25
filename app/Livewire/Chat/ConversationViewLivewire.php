@@ -131,7 +131,7 @@ class ConversationViewLivewire extends Component
         $this->draftText = '';
         $this->passphraseCiphertextBase64 = '';
         $this->passphraseCryptoMetaJson = '';
-        $this->dispatchScrollToBottom(focusComposer: true);
+        $this->dispatchScrollToBottom(focusComposer: true, clearComposerDraft: true);
     }
 
     public function sendImage(MessageService $messageService, ConversationService $conversationService): void
@@ -237,13 +237,14 @@ class ConversationViewLivewire extends Component
         $this->dispatchScrollToBottom();
     }
 
-    private function dispatchScrollToBottom(bool $focusComposer = false): void
+    private function dispatchScrollToBottom(bool $focusComposer = false, bool $clearComposerDraft = false): void
     {
         $this->dispatch(
             'conversation-scroll-to-bottom',
             context: $this->context,
             conversationId: $this->conversationId,
             focusComposer: $focusComposer,
+            clearComposerDraft: $clearComposerDraft,
         );
     }
 

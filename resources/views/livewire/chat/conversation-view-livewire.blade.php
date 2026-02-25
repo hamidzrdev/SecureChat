@@ -1,13 +1,20 @@
 <div
     class="flex h-full min-h-0 flex-col gap-2"
-    wire:poll.15s="pollMessages"
+    @if ($mode === 'public')
+        wire:poll.15s="pollMessages"
+    @endif
     x-data="{
         _observer: null,
         _observedTimeline: null,
+        _shouldRefocusComposer: false,
+        _cleanupMorphUpdatingHook: null,
         _cleanupMorphedHook: null,
         init() {
             this.bindTimelineObserver();
-            this.$nextTick(() => this.scrollToBottom());
+            this.$nextTick(() => {
+                this.restoreComposerDraft();
+                this.scrollToBottom();
+            });
 
             if (window.Livewire && typeof window.Livewire.hook === 'function') {
                 this.registerMorphedHook();
@@ -27,13 +34,35 @@
                 this._cleanupMorphedHook();
                 this._cleanupMorphedHook = null;
             }
+
+            if (typeof this._cleanupMorphUpdatingHook === 'function') {
+                this._cleanupMorphUpdatingHook();
+                this._cleanupMorphUpdatingHook = null;
+            }
         },
         registerMorphedHook() {
-            if (this._cleanupMorphedHook || !window.Livewire || typeof window.Livewire.hook !== 'function') {
+            if (
+                (this._cleanupMorphedHook && this._cleanupMorphUpdatingHook)
+                || !window.Livewire
+                || typeof window.Livewire.hook !== 'function'
+            ) {
                 return;
             }
 
             const componentId = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id') ?? null;
+
+            this._cleanupMorphUpdatingHook = window.Livewire.hook('morph.updating', ({ component }) => {
+                if (componentId && component?.id !== componentId) {
+                    return;
+                }
+
+                const activeElement = document.activeElement;
+                this._shouldRefocusComposer = Boolean(
+                    activeElement
+                    && this.$root.contains(activeElement)
+                    && activeElement.matches?.('[data-chat-composer-input]')
+                );
+            });
 
             this._cleanupMorphedHook = window.Livewire.hook('morphed', ({ component }) => {
                 if (componentId && component?.id !== componentId) {
@@ -41,7 +70,12 @@
                 }
 
                 this.bindTimelineObserver();
+                this.restoreComposerDraft();
                 this.scrollToBottom();
+                if (this._shouldRefocusComposer) {
+                    this.focusComposer();
+                    this._shouldRefocusComposer = false;
+                }
             });
         },
         bindTimelineObserver() {
@@ -79,6 +113,43 @@
                 }
             });
         },
+        restoreComposerDraft() {
+            const composerInput = Array.from(this.$root.querySelectorAll('[data-chat-composer-input]'))
+                .find((el) => !el.disabled && el.offsetParent !== null);
+
+            if (!composerInput || (composerInput.value ?? '') !== '') {
+                return;
+            }
+
+            const normalDraft = sessionStorage.getItem(@js('schat-draft-'.$context.'-'.((int) $conversationId))) ?? '';
+            const passphraseDraft = sessionStorage.getItem(@js('schat-passphrase-draft-'.((int) $conversationId))) ?? '';
+            const cachedDraft = normalDraft !== '' ? normalDraft : passphraseDraft;
+
+            if (cachedDraft === '') {
+                return;
+            }
+
+            const keepCaret = document.activeElement === composerInput;
+            composerInput.value = cachedDraft;
+            composerInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+            if (keepCaret && typeof composerInput.setSelectionRange === 'function') {
+                composerInput.setSelectionRange(cachedDraft.length, cachedDraft.length);
+            }
+        },
+        clearComposerDraftCache() {
+            sessionStorage.removeItem(@js('schat-draft-'.$context.'-'.((int) $conversationId)));
+            sessionStorage.removeItem(@js('schat-passphrase-draft-'.((int) $conversationId)));
+
+            this.$root.querySelectorAll('[data-chat-composer-input]').forEach((input) => {
+                if (!input || (input.value ?? '') === '') {
+                    return;
+                }
+
+                input.value = '';
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+        },
         scrollToBottom(retry = 3) {
             this.bindTimelineObserver();
 
@@ -92,25 +163,11 @@
             }
 
             requestAnimationFrame(() => {
-                const bottomAnchor = this.$refs.timelineBottom;
-                if (bottomAnchor && typeof bottomAnchor.scrollIntoView === 'function') {
-                    bottomAnchor.scrollIntoView({ block: 'end' });
-                }
-
                 timeline.scrollTop = timeline.scrollHeight;
-
-                if (timeline.scrollHeight <= (timeline.clientHeight + 1)) {
-                    const pageBottom = Math.max(
-                        document.body?.scrollHeight ?? 0,
-                        document.documentElement?.scrollHeight ?? 0
-                    );
-
-                    window.scrollTo({ top: pageBottom, left: 0, behavior: 'auto' });
-                }
             });
         },
     }"
-    x-on:conversation-scroll-to-bottom.window="if (($event.detail?.context ?? '') === @js($context)) { scrollToBottom(); if ($event.detail?.focusComposer) { focusComposer(); } }"
+    x-on:conversation-scroll-to-bottom.window="if (($event.detail?.context ?? '') === @js($context)) { scrollToBottom(); if ($event.detail?.clearComposerDraft) { clearComposerDraftCache(); } if ($event.detail?.focusComposer) { focusComposer(); } }"
     x-on:conversation-force-refresh.main.window="scrollToBottom()"
     x-on:conversation-force-refresh.modal.window="scrollToBottom()"
 >
@@ -172,6 +229,7 @@
                                 <p
                                     class="break-words rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-400/45 dark:bg-amber-500/14 dark:text-amber-100"
                                     x-data="window.SChatPassphrase.messageVM({
+                                        messageId: @js((int) ($message['id'] ?? 0)),
                                         conversationId: @js((int) $conversationId),
                                         ciphertextBase64: @js((string) $message['ciphertext_base64']),
                                         cryptoMeta: @js($message['crypto_meta'] ?? []),
@@ -235,21 +293,39 @@
                                 </p>
 
                                 <label class="block text-sm font-medium text-slate-700 dark:text-brand-100">{{ __('chat.common.passphrase') }}</label>
-                                <input
-                                    type="password"
-                                    x-model="passphrase"
-                                    class="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 dark:border-brand-500/35 dark:bg-zinc-950 dark:text-brand-50"
-                                    placeholder="{{ __('chat.conversation.passphrase_placeholder') }}"
-                                />
+                                <div class="relative">
+                                    <input
+                                        x-bind:type="revealPassphrase ? 'text' : 'password'"
+                                        x-model="passphrase"
+                                        class="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 dark:border-brand-500/35 dark:bg-zinc-950 dark:text-brand-50"
+                                        placeholder="{{ __('chat.conversation.passphrase_placeholder') }}"
+                                    />
+                                    <button
+                                        type="button"
+                                        x-on:click="revealPassphrase = !revealPassphrase"
+                                        class="absolute {{ app()->isLocale('fa') ? 'left-2' : 'right-2' }} top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-slate-500 transition hover:bg-amber-100 hover:text-slate-700 dark:text-brand-200/70 dark:hover:bg-brand-500/12 dark:hover:text-brand-100"
+                                    >
+                                        <span x-text="revealPassphrase ? @js(__('chat.form.hide')) : @js(__('chat.form.show'))"></span>
+                                    </button>
+                                </div>
 
                                 <div x-show="!configured">
                                     <label class="block text-sm font-medium text-slate-700 dark:text-brand-100">{{ __('chat.conversation.confirm_passphrase') }}</label>
-                                    <input
-                                        type="password"
-                                        x-model="confirmPassphrase"
-                                        class="mt-1 w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 dark:border-brand-500/35 dark:bg-zinc-950 dark:text-brand-50"
-                                        placeholder="{{ __('chat.conversation.confirm_passphrase_placeholder') }}"
-                                    />
+                                    <div class="relative mt-1">
+                                        <input
+                                            x-bind:type="revealConfirmPassphrase ? 'text' : 'password'"
+                                            x-model="confirmPassphrase"
+                                            class="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 dark:border-brand-500/35 dark:bg-zinc-950 dark:text-brand-50"
+                                            placeholder="{{ __('chat.conversation.confirm_passphrase_placeholder') }}"
+                                        />
+                                        <button
+                                            type="button"
+                                            x-on:click="revealConfirmPassphrase = !revealConfirmPassphrase"
+                                            class="absolute {{ app()->isLocale('fa') ? 'left-2' : 'right-2' }} top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-slate-500 transition hover:bg-amber-100 hover:text-slate-700 dark:text-brand-200/70 dark:hover:bg-brand-500/12 dark:hover:text-brand-100"
+                                        >
+                                            <span x-text="revealConfirmPassphrase ? @js(__('chat.form.hide')) : @js(__('chat.form.show'))"></span>
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <x-button type="button" variant="warning" x-bind:disabled="working" x-on:click="unlock()">
@@ -269,16 +345,29 @@
 
                                 <textarea
                                     data-chat-composer-input
+                                    x-ref="passphrasePlainTextInput"
                                     x-model="plainText"
+                                    x-on:input="persistPlainTextDraft()"
                                     x-on:keydown="if ($event.key === 'Enter' && ! $event.shiftKey && ! $event.isComposing && !working) { $event.preventDefault(); sendEncryptedMessage(); }"
                                     class="min-h-24 w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 dark:border-brand-500/35 dark:bg-zinc-950 dark:text-brand-50"
                                     placeholder="{{ __('chat.conversation.encrypted_message_placeholder') }}"
                                 ></textarea>
 
-                                <x-button type="button" variant="primary" x-bind:disabled="working" x-on:click="sendEncryptedMessage()">
-                                    <span x-show="!working">{{ __('chat.common.send') }}</span>
-                                    <span x-show="working">{{ __('chat.conversation.encrypting') }}</span>
-                                </x-button>
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="flex items-center gap-2">
+                                        @if ($imagesEnabled)
+                                            <label class="inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-amber-300/90 bg-white px-3 text-xs font-medium text-slate-700 transition hover:-translate-y-0.5 hover:border-brand-300 hover:bg-amber-50 dark:border-brand-500/35 dark:bg-zinc-900 dark:text-brand-100 dark:hover:border-brand-400/65 dark:hover:bg-zinc-900">
+                                                <input type="file" wire:model="image" class="hidden" />
+                                                {{ __('chat.conversation.attach_image') }}
+                                            </label>
+                                        @endif
+                                    </div>
+
+                                    <x-button type="button" variant="primary" x-bind:disabled="working" x-on:click="sendEncryptedMessage()">
+                                        <span x-show="!working">{{ __('chat.common.send') }}</span>
+                                        <span x-show="working">{{ __('chat.conversation.encrypting') }}</span>
+                                    </x-button>
+                                </div>
                             </div>
                         </template>
 
@@ -288,7 +377,9 @@
                     <div
                         class="rounded-xl border border-amber-200/80 bg-gradient-to-b from-white to-amber-50/70 p-2.5 shadow-soft dark:border-brand-500/30 dark:from-zinc-950 dark:to-zinc-900/90"
                         x-data="{
+                            draftCacheKey: @js('schat-draft-'.$context.'-'.((int) $conversationId)),
                             emojiOpen: false,
+                            sending: false,
                             showBurst: false,
                             floatingEmoji: '\u2728',
                             emojis: [
@@ -297,6 +388,64 @@
                                 '\uD83D\uDE4F', '\uD83D\uDD25', '\uD83D\uDCA1', '\u2705',
                                 '\uD83C\uDF89', '\uD83D\uDCCE', '\uD83D\uDCAC', '\uD83D\uDE80'
                             ],
+                            initDraft() {
+                                const input = this.$refs.draftInput;
+                                if (!input) {
+                                    return;
+                                }
+
+                                const cachedDraft = sessionStorage.getItem(this.draftCacheKey);
+                                if (!cachedDraft) {
+                                    return;
+                                }
+
+                                input.value = cachedDraft;
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+
+                                if (document.activeElement === input && typeof input.setSelectionRange === 'function') {
+                                    input.setSelectionRange(cachedDraft.length, cachedDraft.length);
+                                }
+                            },
+                            persistDraft() {
+                                const input = this.$refs.draftInput;
+                                if (!input) {
+                                    return;
+                                }
+
+                                const value = input.value ?? '';
+                                if (value.trim() === '') {
+                                    sessionStorage.removeItem(this.draftCacheKey);
+                                    return;
+                                }
+
+                                sessionStorage.setItem(this.draftCacheKey, value);
+                            },
+                            clearDraftCache() {
+                                sessionStorage.removeItem(this.draftCacheKey);
+                            },
+                            clearDraftInput() {
+                                const input = this.$refs.draftInput;
+                                if (!input) {
+                                    return;
+                                }
+
+                                input.value = '';
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                            },
+                            keepDraftInputFocus() {
+                                const input = this.$refs.draftInput;
+                                if (!input) {
+                                    return;
+                                }
+
+                                requestAnimationFrame(() => {
+                                    input.focus({ preventScroll: true });
+                                    if (typeof input.setSelectionRange === 'function') {
+                                        const end = (input.value ?? '').length;
+                                        input.setSelectionRange(end, end);
+                                    }
+                                });
+                            },
                             toggleEmoji() {
                                 this.emojiOpen = !this.emojiOpen;
                             },
@@ -326,22 +475,45 @@
                                     this.showBurst = false;
                                 }, 480);
                             },
-                            sendTextFromKeyboard(event) {
+                            async requestSendText() {
+                                if (this.sending) {
+                                    return;
+                                }
+
+                                const input = this.$refs.draftInput;
+                                const outgoing = input?.value ?? '';
+                                if (outgoing.trim() === '') {
+                                    return;
+                                }
+
+                                this.sending = true;
+                                try {
+                                    await this.$wire.sendText();
+                                    this.clearDraftCache();
+                                    this.clearDraftInput();
+                                    this.keepDraftInputFocus();
+                                } finally {
+                                    this.sending = false;
+                                }
+                            },
+                            async sendTextFromKeyboard(event) {
                                 if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
                                     return;
                                 }
 
                                 event.preventDefault();
                                 this.closeEmoji();
-                                this.$wire.sendText();
+                                await this.requestSendText();
                             },
                         }"
+                        x-init="initDraft()"
                         x-on:keydown.escape.window="closeEmoji()"
                     >
                         <textarea
                             wire:model.defer="draftText"
                             data-chat-composer-input
                             x-ref="draftInput"
+                            x-on:input="persistDraft()"
                             x-on:focus="closeEmoji()"
                             x-on:keydown="sendTextFromKeyboard($event)"
                             class="min-h-12 max-h-28 w-full resize-y border-0 bg-transparent px-1 py-1 text-sm leading-6 text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-0 dark:text-brand-50 dark:placeholder:text-brand-200/40"
@@ -416,19 +588,12 @@
                                 @endif
                             </div>
 
-                            <x-button type="button" variant="primary" wire:click="sendText">
-                                <span wire:loading.remove wire:target="sendText">{{ __('chat.common.send') }}</span>
-                                <span wire:loading wire:target="sendText">{{ __('chat.conversation.sending') }}</span>
+                            <x-button type="button" variant="primary" x-bind:disabled="sending" x-on:click="requestSendText()">
+                                <span x-show="!sending">{{ __('chat.common.send') }}</span>
+                                <span x-show="sending">{{ __('chat.conversation.sending') }}</span>
                             </x-button>
                         </div>
                     </div>
-                @endif
-
-                @if ($imagesEnabled && $passphraseMode)
-                    <label class="inline-flex h-9 w-fit cursor-pointer items-center justify-center rounded-xl border border-amber-300/90 bg-white px-3 text-xs font-medium text-slate-700 transition hover:border-brand-300 hover:bg-amber-50 dark:border-brand-500/35 dark:bg-zinc-900 dark:text-brand-100 dark:hover:border-brand-400/65 dark:hover:bg-zinc-900">
-                        <input type="file" wire:model="image" class="hidden" />
-                        {{ __('chat.conversation.attach_image') }}
-                    </label>
                 @endif
 
                 @if ($image)
@@ -486,6 +651,99 @@
             };
 
             const cacheKey = (conversationId) => `schat-passphrase-${conversationId}`;
+            const passphraseDraftKey = (conversationId) => `schat-passphrase-draft-${conversationId}`;
+            const decryptedMessageKey = (conversationId, messageId) => `schat-passphrase-dec-${conversationId}-${messageId}`;
+            const getCachedPassphrase = (conversationId) => {
+                const key = cacheKey(conversationId);
+
+                try {
+                    const sessionValue = sessionStorage.getItem(key);
+                    if (sessionValue) {
+                        return sessionValue;
+                    }
+                } catch (error) {
+                    //
+                }
+
+                try {
+                    const localValue = localStorage.getItem(key);
+                    if (localValue) {
+                        return localValue;
+                    }
+                } catch (error) {
+                    //
+                }
+
+                return '';
+            };
+            const setCachedPassphrase = (conversationId, passphrase) => {
+                const key = cacheKey(conversationId);
+
+                try {
+                    sessionStorage.setItem(key, passphrase);
+                } catch (error) {
+                    //
+                }
+
+                try {
+                    localStorage.setItem(key, passphrase);
+                } catch (error) {
+                    //
+                }
+            };
+            const clearCachedPassphrase = (conversationId) => {
+                const key = cacheKey(conversationId);
+
+                try {
+                    sessionStorage.removeItem(key);
+                } catch (error) {
+                    //
+                }
+
+                try {
+                    localStorage.removeItem(key);
+                } catch (error) {
+                    //
+                }
+            };
+            const getCachedDecryptedMessage = (conversationId, messageId) => {
+                if (!messageId) {
+                    return null;
+                }
+
+                try {
+                    const value = sessionStorage.getItem(decryptedMessageKey(conversationId, messageId));
+                    return value === null ? null : value;
+                } catch (error) {
+                    return null;
+                }
+            };
+            const setCachedDecryptedMessage = (conversationId, messageId, text) => {
+                if (!messageId) {
+                    return;
+                }
+
+                try {
+                    sessionStorage.setItem(decryptedMessageKey(conversationId, messageId), text);
+                } catch (error) {
+                    //
+                }
+            };
+            const clearDecryptedConversationCache = (conversationId) => {
+                const prefix = `schat-passphrase-dec-${conversationId}-`;
+
+                try {
+                    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+                        const storageKey = sessionStorage.key(index);
+
+                        if (storageKey && storageKey.startsWith(prefix)) {
+                            sessionStorage.removeItem(storageKey);
+                        }
+                    }
+                } catch (error) {
+                    //
+                }
+            };
 
             const base64ToBytes = (base64) => Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
             const bytesToBase64 = (bytes) => btoa(String.fromCharCode(...bytes));
@@ -582,16 +840,49 @@
                     kdf,
                     passphrase: '',
                     confirmPassphrase: '',
+                    revealPassphrase: false,
+                    revealConfirmPassphrase: false,
                     plainText: '',
-                    unlocked: false,
+                    unlocked: Boolean(getCachedPassphrase(conversationId)),
                     working: false,
                     error: '',
                     init() {
-                        const cachedPassphrase = sessionStorage.getItem(cacheKey(this.conversationId));
+                        const cachedPassphrase = getCachedPassphrase(this.conversationId);
+                        const cachedDraft = sessionStorage.getItem(passphraseDraftKey(this.conversationId));
+
+                        if (cachedDraft) {
+                            this.plainText = cachedDraft;
+                        }
+
                         if (cachedPassphrase) {
                             this.passphrase = cachedPassphrase;
-                            this.unlock(true);
+                            this.unlocked = true;
+                            window.dispatchEvent(new CustomEvent('schat-passphrase-updated', { detail: { conversationId: this.conversationId } }));
                         }
+                    },
+                    persistPlainTextDraft() {
+                        const text = this.plainText ?? '';
+
+                        if (text.trim() === '') {
+                            sessionStorage.removeItem(passphraseDraftKey(this.conversationId));
+                            return;
+                        }
+
+                        sessionStorage.setItem(passphraseDraftKey(this.conversationId), text);
+                    },
+                    focusPlainTextComposer() {
+                        const input = this.$refs.passphrasePlainTextInput;
+                        if (!input) {
+                            return;
+                        }
+
+                        requestAnimationFrame(() => {
+                            input.focus({ preventScroll: true });
+                            if (typeof input.setSelectionRange === 'function') {
+                                const end = (input.value ?? '').length;
+                                input.setSelectionRange(end, end);
+                            }
+                        });
                     },
                     conversationUrl(path) {
                         return `${conversationsBaseUrl}/${this.conversationId}/${path}`;
@@ -671,9 +962,8 @@
                             }
 
                             this.unlocked = true;
-                            sessionStorage.setItem(cacheKey(this.conversationId), this.passphrase);
+                            setCachedPassphrase(this.conversationId, this.passphrase);
                             window.dispatchEvent(new CustomEvent('schat-passphrase-updated', { detail: { conversationId: this.conversationId } }));
-                            this.forceRefresh();
                         } catch (error) {
                             this.unlocked = false;
                             if (!silent) {
@@ -686,7 +976,9 @@
                     lock() {
                         this.unlocked = false;
                         this.plainText = '';
-                        sessionStorage.removeItem(cacheKey(this.conversationId));
+                        clearCachedPassphrase(this.conversationId);
+                        clearDecryptedConversationCache(this.conversationId);
+                        sessionStorage.removeItem(passphraseDraftKey(this.conversationId));
                         window.dispatchEvent(new CustomEvent('schat-passphrase-updated', { detail: { conversationId: this.conversationId } }));
                     },
                     async sendEncryptedMessage() {
@@ -719,7 +1011,8 @@
                             });
 
                             this.plainText = '';
-                            this.forceRefresh();
+                            this.persistPlainTextDraft();
+                            this.focusPlainTextComposer();
                         } catch (error) {
                             this.error = error instanceof Error ? error.message : i18n.sendFailed;
                         } finally {
@@ -727,23 +1020,32 @@
                         }
                     },
                 }),
-                messageVM: ({ conversationId, ciphertextBase64, cryptoMeta }) => ({
+                messageVM: ({ messageId, conversationId, ciphertextBase64, cryptoMeta }) => ({
+                    messageId,
                     conversationId,
                     ciphertextBase64,
                     cryptoMeta,
-                    text: i18n.lockedMessage,
+                    text: '',
                     init() {
+                        const cachedText = getCachedDecryptedMessage(this.conversationId, this.messageId);
+                        if (cachedText !== null) {
+                            this.text = cachedText;
+                            return;
+                        }
+
                         this.decrypt();
                     },
                     async decrypt() {
-                        const passphrase = sessionStorage.getItem(cacheKey(this.conversationId));
+                        const passphrase = getCachedPassphrase(this.conversationId);
                         if (!passphrase) {
                             this.text = i18n.lockedMessage;
                             return;
                         }
 
                         try {
-                            this.text = await decryptMessage(passphrase, this.ciphertextBase64, this.cryptoMeta);
+                            const decryptedText = await decryptMessage(passphrase, this.ciphertextBase64, this.cryptoMeta);
+                            this.text = decryptedText;
+                            setCachedDecryptedMessage(this.conversationId, this.messageId, decryptedText);
                         } catch (error) {
                             this.text = i18n.decryptFailed;
                         }

@@ -207,6 +207,12 @@ class ChatShellLivewire extends Component
 
     private function openPrivateConversationModal(int $conversationId, ?bool $isPassphrase = null): void
     {
+        if ($this->privateConversationModalOpen && $this->modalConversationId === $conversationId) {
+            $this->selectedConversationId = $conversationId;
+
+            return;
+        }
+
         $conversationService = app(ConversationService::class);
         $conversation = Conversation::query()->findOrFail($conversationId);
 

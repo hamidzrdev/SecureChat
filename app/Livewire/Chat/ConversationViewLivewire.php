@@ -131,6 +131,7 @@ class ConversationViewLivewire extends Component
         $this->draftText = '';
         $this->passphraseCiphertextBase64 = '';
         $this->passphraseCryptoMetaJson = '';
+        $this->dispatchScrollToBottom(focusComposer: true);
     }
 
     public function sendImage(MessageService $messageService, ConversationService $conversationService): void
@@ -154,6 +155,7 @@ class ConversationViewLivewire extends Component
 
         $this->messages[] = $messageService->toClientMessage($message);
         $this->reset('image');
+        $this->dispatchScrollToBottom(focusComposer: true);
     }
 
     public function clearImage(): void
@@ -218,6 +220,7 @@ class ConversationViewLivewire extends Component
             $this->messages = [];
             $this->passphraseMode = false;
             $this->passphraseConfigured = false;
+            $this->dispatchScrollToBottom();
 
             return;
         }
@@ -231,6 +234,17 @@ class ConversationViewLivewire extends Component
             ->listConversationMessages($conversation, $this->authenticatedUser(), 150)
             ->values()
             ->all();
+        $this->dispatchScrollToBottom();
+    }
+
+    private function dispatchScrollToBottom(bool $focusComposer = false): void
+    {
+        $this->dispatch(
+            'conversation-scroll-to-bottom',
+            context: $this->context,
+            conversationId: $this->conversationId,
+            focusComposer: $focusComposer,
+        );
     }
 
     private function resolveConversation(ConversationService $conversationService): ?Conversation

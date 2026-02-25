@@ -2,28 +2,115 @@
     class="flex h-full min-h-0 flex-col gap-2"
     wire:poll.15s="pollMessages"
     x-data="{
+        _observer: null,
+        _observedTimeline: null,
+        _cleanupMorphedHook: null,
         init() {
+            this.bindTimelineObserver();
             this.$nextTick(() => this.scrollToBottom());
 
-            const timeline = this.$refs.timeline;
-            if (!timeline) {
+            if (window.Livewire && typeof window.Livewire.hook === 'function') {
+                this.registerMorphedHook();
+            } else {
+                document.addEventListener('livewire:init', () => this.registerMorphedHook(), { once: true });
+            }
+        },
+        destroy() {
+            if (this._observer) {
+                this._observer.disconnect();
+                this._observer = null;
+            }
+
+            this._observedTimeline = null;
+
+            if (typeof this._cleanupMorphedHook === 'function') {
+                this._cleanupMorphedHook();
+                this._cleanupMorphedHook = null;
+            }
+        },
+        registerMorphedHook() {
+            if (this._cleanupMorphedHook || !window.Livewire || typeof window.Livewire.hook !== 'function') {
                 return;
             }
 
+            const componentId = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id') ?? null;
+
+            this._cleanupMorphedHook = window.Livewire.hook('morphed', ({ component }) => {
+                if (componentId && component?.id !== componentId) {
+                    return;
+                }
+
+                this.bindTimelineObserver();
+                this.scrollToBottom();
+            });
+        },
+        bindTimelineObserver() {
+            const timeline = this.$refs.timeline;
+            if (!timeline || this._observedTimeline === timeline) {
+                return;
+            }
+
+            if (this._observer) {
+                this._observer.disconnect();
+            }
+
+            this._observedTimeline = timeline;
             this._observer = new MutationObserver(() => this.scrollToBottom());
             this._observer.observe(timeline, { childList: true, subtree: true });
         },
-        scrollToBottom() {
-            const timeline = this.$refs.timeline;
-            if (!timeline) {
+        focusComposer(retry = 4) {
+            const composerInput = Array.from(this.$root.querySelectorAll('[data-chat-composer-input]'))
+                .find((el) => !el.disabled && el.offsetParent !== null);
+
+            if (!composerInput) {
+                if (retry > 0) {
+                    requestAnimationFrame(() => this.focusComposer(retry - 1));
+                }
+
                 return;
             }
 
             requestAnimationFrame(() => {
+                composerInput.focus({ preventScroll: true });
+
+                if (typeof composerInput.setSelectionRange === 'function') {
+                    const end = (composerInput.value || '').length;
+                    composerInput.setSelectionRange(end, end);
+                }
+            });
+        },
+        scrollToBottom(retry = 3) {
+            this.bindTimelineObserver();
+
+            const timeline = this.$refs.timeline;
+            if (!timeline) {
+                if (retry > 0) {
+                    requestAnimationFrame(() => this.scrollToBottom(retry - 1));
+                }
+
+                return;
+            }
+
+            requestAnimationFrame(() => {
+                const bottomAnchor = this.$refs.timelineBottom;
+                if (bottomAnchor && typeof bottomAnchor.scrollIntoView === 'function') {
+                    bottomAnchor.scrollIntoView({ block: 'end' });
+                }
+
                 timeline.scrollTop = timeline.scrollHeight;
+
+                if (timeline.scrollHeight <= (timeline.clientHeight + 1)) {
+                    const pageBottom = Math.max(
+                        document.body?.scrollHeight ?? 0,
+                        document.documentElement?.scrollHeight ?? 0
+                    );
+
+                    window.scrollTo({ top: pageBottom, left: 0, behavior: 'auto' });
+                }
             });
         },
     }"
+    x-on:conversation-scroll-to-bottom.window="if (($event.detail?.context ?? '') === @js($context)) { scrollToBottom(); if ($event.detail?.focusComposer) { focusComposer(); } }"
     x-on:conversation-force-refresh.main.window="scrollToBottom()"
     x-on:conversation-force-refresh.modal.window="scrollToBottom()"
 >
@@ -119,6 +206,8 @@
                         <p class="text-sm text-slate-500 dark:text-brand-200/60">{{ __('chat.conversation.no_messages') }}</p>
                     </div>
                 @endforelse
+
+                <div x-ref="timelineBottom" class="h-px w-full" aria-hidden="true"></div>
             </div>
         @endif
     </x-card>
@@ -179,6 +268,7 @@
                                 </div>
 
                                 <textarea
+                                    data-chat-composer-input
                                     x-model="plainText"
                                     x-on:keydown="if ($event.key === 'Enter' && ! $event.shiftKey && ! $event.isComposing && !working) { $event.preventDefault(); sendEncryptedMessage(); }"
                                     class="min-h-24 w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 dark:border-brand-500/35 dark:bg-zinc-950 dark:text-brand-50"
@@ -250,6 +340,7 @@
                     >
                         <textarea
                             wire:model.defer="draftText"
+                            data-chat-composer-input
                             x-ref="draftInput"
                             x-on:focus="closeEmoji()"
                             x-on:keydown="sendTextFromKeyboard($event)"
